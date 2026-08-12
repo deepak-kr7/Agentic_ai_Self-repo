@@ -380,7 +380,7 @@ stages:
       inputs:
         buildType: 'current'
         artifactName: 'tf_error_log'
-        targetPath: '$(Pipeline.Workspace)'
+        targetPath: '$(terraformWorkingDirectory)'
 
     - task: UsePythonVersion@0
       displayName: 'Use Python 3.12'
@@ -389,8 +389,8 @@ stages:
 
     - script: |
         python -m pip install --upgrade pip
-        pip install --upgrade openai
-      displayName: 'Install OpenAI SDK'
+        pip install --upgrade openai azure-identity
+      displayName: 'Install OpenAI & Azure SDK'
 
     - task: AzureCLI@2
       displayName: 'Trigger Self-Healing AI Agent (Azure Authenticated)'
