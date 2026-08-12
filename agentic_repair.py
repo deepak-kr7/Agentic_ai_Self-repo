@@ -19,10 +19,11 @@ def get_azure_openai_client():
     if deployment.startswith("$(") or not deployment:
         deployment = "gpt-4o"
 
-    # 1. TOP PRIORITY: Auto-discover live Azure Portal credentials via Azure CLI session
+    # 1. TOP PRIORITY: Auto-discover live Azure Portal credentials & deployment names via Azure CLI session
     print("Discovering live Azure OpenAI credentials from Azure Portal via Azure CLI...")
     cli_key = None
     cli_endpoint = None
+    cli_deployment = None
     try:
         list_res = subprocess.run(
             ["az", "cognitiveservices", "account", "list",
@@ -46,6 +47,21 @@ def get_azure_openai_client():
                     if res_ep:
                         cli_endpoint = res_ep
                     print(f"SUCCESS: Auto-discovered live key from Azure Portal for resource '{res_name}' in RG '{res_rg}'!")
+
+                    # Auto-discover active deployment name (e.g. gpt-4o, gpt-4, etc.)
+                    dep_res = subprocess.run(
+                        ["az", "cognitiveservices", "account", "deployment", "list",
+                         "-g", res_rg, "-n", res_name, "--query", "[].name", "-o", "json"],
+                        capture_output=True, text=True
+                    )
+                    if dep_res.returncode == 0 and dep_res.stdout.strip():
+                        deps = json.loads(dep_res.stdout.strip())
+                        if deps and isinstance(deps, list) and len(deps) > 0:
+                            if "gpt-4o" in deps:
+                                cli_deployment = "gpt-4o"
+                            else:
+                                cli_deployment = deps[0]
+                            print(f"SUCCESS: Auto-discovered active model deployment name: '{cli_deployment}'!")
                     break
     except Exception as e:
         print(f"Azure CLI live discovery notice: {e}")
@@ -54,6 +70,8 @@ def get_azure_openai_client():
         api_key = cli_key
     if cli_endpoint:
         endpoint = cli_endpoint
+    if cli_deployment:
+        deployment = cli_deployment
 
     # 2. Azure AD Bearer Token Fallback
     bearer_token = None
@@ -215,10 +233,10 @@ Return ONLY valid JSON matching this schema:
         content = re.sub(r'var\.[a-zA-Z0-9_]*brock[a-zA-Z0-9_]*', 'var.resource_map', content)
         content = re.sub(r'var\.[a-zA-Z0-9_]*broken[a-zA-Z0-9_]*', 'var.resource_map', content)
         
-        # Rule B: Fix property name typos (e.g. locations -> location, names -> name, rg_nameaa -> rg_name)
+        # Rule B: Fix property name typos (e.g. locationssa / locations -> location, namesa -> name, rg_nameaa -> rg_name)
         content = re.sub(r'each\.value\.rg_name[a-zA-Z0-9_]+', 'each.value.rg_name', content)
-        content = re.sub(r'\blocations\b', 'location', content)
-        content = re.sub(r'\bnames\b', 'name', content)
+        content = re.sub(r'\blocation[a-zA-Z0-9_]*\s*=', 'location =', content)
+        content = re.sub(r'\bname[a-zA-Z0-9_]*\s*=', 'name =', content)
         
         # Rule C: Fix missing opening brace at resource declaration
         content = re.sub(r'(resource\s+"[a-zA-Z0-9_]+"\s+"[a-zA-Z0-9_]+")\s*\n(\s*for_each|\s*name|\s*location)', r'\1 {\n\2', content)
