@@ -2,12 +2,12 @@
 resource "azurerm_resource_group" "rg" {
   for_each = var.resource_map
 
-  name     = each.value.rg_nameaa
+  name     = each.value.rg_name
   location = each.value.location
 }
 
 # 2. Storage Account
-resource "azurerm_storage_account" "st" 
+resource "azurerm_storage_account" "st" {
   for_each = var.resource_map
 
   name                     = each.value.storage.name
