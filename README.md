@@ -9,7 +9,37 @@ An **Autonomous, Agentic AI-powered Self-Healing CI/CD Pipeline** for Azure DevO
 
 ---
 
-## 🎯 Architecture Diagram
+## 🏗️ Technical Flow & Pipeline Architecture
+
+```mermaid
+graph TD
+    A[Git Push / PR to main] --> B[Stage 1: Terraform Format & Validate]
+    B --> C1[Stage 2: TFLint Scan]
+    B --> C2[Stage 3: Checkov Security Scan]
+    B --> C3[Stage 4: tfsec Security Scan]
+    B --> C4[Stage 5: Gitleaks Secret Scan]
+    C1 & C2 & C3 & C4 --> D[Stage 6: Terraform Plan]
+    D --> E[Stage 7: Agentic AI Security Audit & Auto-Fix]
+    B & C1 & C2 & C3 & C4 & D -->|On Pipeline/Code Failure| F[Stage 8: Agentic AI Self-Healing Auto-Repair]
+    E -->|Approved| G[Stage 9: Terraform Apply]
+    F -->|Fix Security/Syntax Vulnerability| H[Auto-Commit Patch to Git]
+```
+
+### ⚡ Technical Flow Breakdown
+
+1. **Stage 1: `TerraformValidate`**: Formats HCL code and validates syntax.
+2. **Stage 2: `TFLint`**: Scans HCL code against Azure best practices and linter rules.
+3. **Stage 3: `Checkov`**: Performs static security analysis on Infrastructure as Code.
+4. **Stage 4: `tfsec`**: Scans HCL for static security misconfigurations (e.g. unencrypted storage, public ports).
+5. **Stage 5: `Gitleaks`**: Scans repo history for hardcoded secrets, API keys, and credentials.
+6. **Stage 6: `TerraformPlan`**: Generates Terraform execution plan and outputs `tfplan.json`.
+7. **Stage 7: `AgenticAISecurityScan`**: Agentic AI Agent reads all 4 scan reports + `tfplan.json`, calls Azure OpenAI (`deepaknsn7-3356-resource`), produces a Security Assessment Report, and **auto-fixes security flaws in Git**.
+8. **Stage 8: `AgenticAISelfHealing`**: **Autonomous Self-Healing Stage** (runs on failure: `condition: failed()`). Captures error logs, queries Azure OpenAI, auto-patches `.tf` code, and pushes fixes back to Git.
+9. **Stage 9: `TerraformApply`**: Applies infrastructure resources cleanly to Azure.
+
+---
+
+## 🎯 Detailed Pipeline Diagram
 
 ```mermaid
 flowchart TD
@@ -102,18 +132,6 @@ resource_map = {
   }
 }
 ```
-
-### 2. Multi-Stage Azure DevOps Pipeline (`azure-pipelines.yml`)
-
-- **Stage 01 (`TerraformValidate`)**: Formats HCL, initializes backend (`cicd_test`), and validates syntax.
-- **Stage 02 (`TFLint`)**: Lints code against Azure HCL best practices.
-- **Stage 03 (`Checkov`)**: Checks compliance against 1000+ IaC security policies.
-- **Stage 04 (`tfsec`)**: Detects static security misconfigurations.
-- **Stage 05 (`Gitleaks`)**: Prevents secrets, tokens, or credentials from leaking into Git.
-- **Stage 06 (`TerraformPlan`)**: Generates and converts the binary plan to JSON.
-- **Stage 07 (`AgenticAISecurityScan`)**: Sends security scan reports + plan JSON to Azure OpenAI (`deepaknsn7-3356-resource`) to generate a security assessment and auto-fix security flaws.
-- **Stage 08 (`AgenticAISelfHealing`)**: **Runs automatically on pipeline failure (`condition: failed()`)** to fix syntax/deployment bugs.
-- **Stage 09 (`TerraformApply`)**: Applies infrastructure changes to Azure.
 
 ---
 
