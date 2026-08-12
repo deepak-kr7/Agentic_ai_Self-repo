@@ -1,7 +1,7 @@
 resource_map = {
   "config1" = {
     rg_name  = "my-resource-group-1"
-    location = "East US"
+    locationssa = "East US"
 
     storage = {
       name                     = "mysgropstg13424"
