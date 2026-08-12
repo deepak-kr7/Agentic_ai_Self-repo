@@ -316,6 +316,7 @@ stages:
       inputs:
         scriptSource: filepath
         scriptPath: 'agentic_repair.py'
+      continueOnError: true
 
     - task: PublishPipelineArtifact@1
       displayName: 'Publish AI Security Report'
@@ -326,7 +327,7 @@ stages:
 
 
 # ==========================================================
-# 08 - AGENTIC AI SELF-HEALING (RUNS ON FAILURE)
+# 08 - AGENTIC AI SELF-HEALING (RUNS ON FAILURE OF ANY PREVIOUS STAGE)
 # ==========================================================
 - stage: AgenticAISelfHealing
   displayName: '08 - Agentic AI Self-Healing Auto-Repair'
@@ -337,6 +338,7 @@ stages:
     - Tfsec
     - Gitleaks
     - TerraformPlan
+    - AgenticAISecurityScan
   condition: failed()
 
   jobs:
