@@ -5,18 +5,18 @@ variable "resource_map" {
     location = string
 
     storage = object({
-      name                     = string
+      name = string
       account_tier             = string
       account_replication_type = string
     })
 
     vnet = object({
-      name          = string
+      name = string
       address_space = list(string)
     })
 
     subnet = object({
-      name             = string
+      name = string
       address_prefixes = list(string)
     })
 
