@@ -18,17 +18,46 @@ def get_azure_openai_client():
         deployment = "gpt-4o"
 
     if not api_key:
-        print("AZURE_OPENAI_API_KEY not found in environment variables. Attempting Azure CLI discovery...")
+        print("AZURE_OPENAI_API_KEY not found in environment variables. Attempting Azure CLI discovery for Azure AI Foundry / Cognitive Services...")
         try:
-            res = subprocess.run(
-                ["az", "cognitiveservices", "account", "keys", "list",
-                 "-g", "deepaknsn7-3356-resource", "-n", "deepaknsn7-3356-resource",
-                 "--query", "key1", "-o", "tsv"],
-                capture_output=True, text=True
-            )
-            if res.returncode == 0 and res.stdout.strip():
-                api_key = res.stdout.strip()
-                print("Successfully auto-discovered Azure OpenAI API key via Azure CLI.")
+            # Query keys for deepaknsn7-3356-resource or deepaknsn7-3356
+            possible_names = ["deepaknsn7-3356-resource", "deepaknsn7-3356"]
+            for res_name in possible_names:
+                res = subprocess.run(
+                    ["az", "cognitiveservices", "account", "keys", "list",
+                     "-g", "deepaknsn7-3356-resource", "-n", res_name,
+                     "--query", "key1", "-o", "tsv"],
+                    capture_output=True, text=True
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    api_key = res.stdout.strip()
+                    print(f"Successfully auto-discovered Azure OpenAI API key for '{res_name}'.")
+                    break
+
+            # Fallback: Query any Cognitive Services / OpenAI account in subscription
+            if not api_key:
+                res_all = subprocess.run(
+                    ["az", "cognitiveservices", "account", "list",
+                     "--query", "[?kind=='OpenAI' || contains(name, 'deepak')].{name:name, rg:resourceGroup, endpoint:properties.endpoint}",
+                     "-o", "json"],
+                    capture_output=True, text=True
+                )
+                if res_all.returncode == 0 and res_all.stdout.strip():
+                    accts = json.loads(res_all.stdout)
+                    if accts:
+                        target = accts[0]
+                        rg = target.get("rg", "deepaknsn7-3356-resource")
+                        name = target.get("name", "")
+                        if target.get("endpoint"):
+                            endpoint = target.get("endpoint")
+                        k_res = subprocess.run(
+                            ["az", "cognitiveservices", "account", "keys", "list",
+                             "-g", rg, "-n", name, "--query", "key1", "-o", "tsv"],
+                            capture_output=True, text=True
+                        )
+                        if k_res.returncode == 0 and k_res.stdout.strip():
+                            api_key = k_res.stdout.strip()
+                            print(f"Auto-discovered Azure OpenAI key via subscription search for '{name}'.")
         except Exception as e:
             print(f"Azure CLI discovery notice: {e}")
 

@@ -73,6 +73,7 @@ stages:
         backendAzureRmUseEntraIdForStorage: false
 
     - script: |
+        touch tf_error.log
         terraform validate 2>&1 | tee tf_error.log
       displayName: 'Terraform Validate (Capture Log)'
       workingDirectory: '$(terraformWorkingDirectory)'
@@ -102,6 +103,7 @@ stages:
     - checkout: self
 
     - script: |
+        touch tflint_report.txt
         curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
         tflint --version
         tflint --init
@@ -133,6 +135,7 @@ stages:
     - checkout: self
 
     - script: |
+        touch checkov_report.txt
         python3 -m pip install --upgrade pip
         python3 -m pip install checkov
         checkov -d "$(terraformWorkingDirectory)" --framework terraform --soft-fail 2>&1 | tee checkov_report.txt
@@ -162,6 +165,7 @@ stages:
     - checkout: self
 
     - script: |
+        touch tfsec_report.txt
         curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
         tfsec --version
         tfsec "$(terraformWorkingDirectory)" --soft-fail 2>&1 | tee tfsec_report.txt
@@ -192,6 +196,7 @@ stages:
       fetchDepth: 0
 
     - script: |
+        touch gitleaks_report.txt
         curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash
         gitleaks version
         gitleaks detect --source "$(Build.SourcesDirectory)" --redact --exit-code 0 2>&1 | tee gitleaks_report.txt
@@ -279,21 +284,37 @@ stages:
     - checkout: self
       persistCredentials: true
 
-    - download: current
-      artifact: tflint_report
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download TFLint Report'
       continueOnError: true
+      inputs:
+        buildType: 'current'
+        artifactName: 'tflint_report'
+        targetPath: '$(Pipeline.Workspace)'
 
-    - download: current
-      artifact: checkov_report
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Checkov Report'
       continueOnError: true
+      inputs:
+        buildType: 'current'
+        artifactName: 'checkov_report'
+        targetPath: '$(Pipeline.Workspace)'
 
-    - download: current
-      artifact: tfsec_report
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download tfsec Report'
       continueOnError: true
+      inputs:
+        buildType: 'current'
+        artifactName: 'tfsec_report'
+        targetPath: '$(Pipeline.Workspace)'
 
-    - download: current
-      artifact: gitleaks_report
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Gitleaks Report'
       continueOnError: true
+      inputs:
+        buildType: 'current'
+        artifactName: 'gitleaks_report'
+        targetPath: '$(Pipeline.Workspace)'
 
     - task: UsePythonVersion@0
       displayName: 'Use Python 3.12'
@@ -305,8 +326,14 @@ stages:
         pip install --upgrade openai azure-identity
       displayName: 'Install OpenAI & Azure SDK'
 
-    - task: PythonScript@0
+    - task: AzureCLI@2
       displayName: 'Trigger Agentic AI Security Review & Auto-Fix'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          python3 agentic_repair.py
       env:
         AZURE_OPENAI_ENDPOINT: $(AZURE_OPENAI_ENDPOINT)
         AZURE_OPENAI_API_KEY: $(AZURE_OPENAI_API_KEY)
@@ -314,9 +341,6 @@ stages:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         GITHUB_TOKEN: $(GITHUB_TOKEN)
         AGENTIC_MODE: 'SECURITY_SCAN'
-      inputs:
-        scriptSource: filepath
-        scriptPath: 'agentic_repair.py'
       continueOnError: true
 
     - task: PublishPipelineArtifact@1
@@ -350,9 +374,13 @@ stages:
     - checkout: self
       persistCredentials: true
 
-    - download: current
-      artifact: tf_error_log
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Error Log Artifact'
       continueOnError: true
+      inputs:
+        buildType: 'current'
+        artifactName: 'tf_error_log'
+        targetPath: '$(Pipeline.Workspace)'
 
     - task: UsePythonVersion@0
       displayName: 'Use Python 3.12'
@@ -364,8 +392,14 @@ stages:
         pip install --upgrade openai
       displayName: 'Install OpenAI SDK'
 
-    - task: PythonScript@0
-      displayName: 'Trigger Self-Healing AI Agent'
+    - task: AzureCLI@2
+      displayName: 'Trigger Self-Healing AI Agent (Azure Authenticated)'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          python3 agentic_repair.py
       env:
         AZURE_OPENAI_ENDPOINT: $(AZURE_OPENAI_ENDPOINT)
         AZURE_OPENAI_API_KEY: $(AZURE_OPENAI_API_KEY)
@@ -373,9 +407,6 @@ stages:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         GITHUB_TOKEN: $(GITHUB_TOKEN)
         AGENTIC_MODE: 'AUTO_REPAIR'
-      inputs:
-        scriptSource: filepath
-        scriptPath: 'agentic_repair.py'
 
 
 # ==========================================================
