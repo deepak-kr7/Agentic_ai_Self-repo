@@ -1,0 +1,420 @@
+trigger:
+  - main
+
+pool:
+  name: 2nd_pool
+
+variables:
+  - name: terraformVersion
+    value: '1.9.8'
+
+  - name: terraformWorkingDirectory
+    value: '$(System.DefaultWorkingDirectory)'
+
+  - name: azureServiceConnection
+    value: '2nd project service'
+
+  - name: backendResourceGroup
+    value: 'cicd_test'
+
+  - name: backendStorageAccount
+    value: 'storagecicd12'
+
+  - name: backendContainer
+    value: 'cicdcontainer'
+
+  - name: backendKey
+    value: 'terraform.tfstate'
+
+  # Azure AI / Azure OpenAI Resource Endpoint Configuration
+  - name: AZURE_OPENAI_ENDPOINT
+    value: 'https://deepaknsn7-3356-resource.openai.azure.com/'
+
+  - name: AZURE_OPENAI_DEPLOYMENT
+    value: 'gpt-4o'
+
+
+stages:
+
+# ==========================================================
+# 01 - TERRAFORM FORMAT & VALIDATE
+# ==========================================================
+- stage: TerraformValidate
+  displayName: '01 - Terraform Format & Validate'
+
+  jobs:
+  - job: Validate
+    displayName: 'Terraform Validate'
+
+    steps:
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    - script: |
+        terraform fmt -check -recursive
+      displayName: 'Terraform Format Check'
+      continueOnError: true
+
+    - task: TerraformTask@5
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        backendServiceArm: '$(azureServiceConnection)'
+        backendAzureRmResourceGroupName: '$(backendResourceGroup)'
+        backendAzureRmStorageAccountName: '$(backendStorageAccount)'
+        backendAzureRmContainerName: '$(backendContainer)'
+        backendAzureRmKey: '$(backendKey)'
+        backendAzureRmUseEntraIdForStorage: false
+
+    - script: |
+        terraform validate 2>&1 | tee tf_error.log
+      displayName: 'Terraform Validate (Capture Log)'
+      workingDirectory: '$(terraformWorkingDirectory)'
+      continueOnError: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Error Log Artifact'
+      condition: always()
+      inputs:
+        targetPath: '$(terraformWorkingDirectory)/tf_error.log'
+        artifact: 'tf_error_log'
+
+
+# ==========================================================
+# 02 - TFLINT SECURITY SCAN
+# ==========================================================
+- stage: TFLint
+  displayName: '02 - TFLint Security & Code Scan'
+  dependsOn: TerraformValidate
+  condition: succeeded()
+
+  jobs:
+  - job: TFLintScan
+    displayName: 'TFLint Scan'
+
+    steps:
+    - checkout: self
+
+    - script: |
+        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+        tflint --version
+        tflint --init
+        tflint --recursive 2>&1 | tee tflint_report.txt
+      displayName: 'Run TFLint Scan'
+      continueOnError: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish TFLint Report'
+      condition: always()
+      inputs:
+        targetPath: 'tflint_report.txt'
+        artifact: 'tflint_report'
+
+
+# ==========================================================
+# 03 - CHECKOV SECURITY SCAN
+# ==========================================================
+- stage: Checkov
+  displayName: '03 - Checkov IaC Security Scan'
+  dependsOn: TerraformValidate
+  condition: succeeded()
+
+  jobs:
+  - job: CheckovScan
+    displayName: 'Checkov Scan'
+
+    steps:
+    - checkout: self
+
+    - script: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install checkov
+        checkov -d "$(terraformWorkingDirectory)" --framework terraform --soft-fail 2>&1 | tee checkov_report.txt
+      displayName: 'Run Checkov Scan'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Checkov Report'
+      condition: always()
+      inputs:
+        targetPath: 'checkov_report.txt'
+        artifact: 'checkov_report'
+
+
+# ==========================================================
+# 04 - TFSEC SECURITY SCAN
+# ==========================================================
+- stage: Tfsec
+  displayName: '04 - tfsec Security Scan'
+  dependsOn: TerraformValidate
+  condition: succeeded()
+
+  jobs:
+  - job: TfsecScan
+    displayName: 'tfsec Scan'
+
+    steps:
+    - checkout: self
+
+    - script: |
+        curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+        tfsec --version
+        tfsec "$(terraformWorkingDirectory)" --soft-fail 2>&1 | tee tfsec_report.txt
+      displayName: 'Run tfsec Scan'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish tfsec Report'
+      condition: always()
+      inputs:
+        targetPath: 'tfsec_report.txt'
+        artifact: 'tfsec_report'
+
+
+# ==========================================================
+# 05 - GITLEAKS SECRET SCAN
+# ==========================================================
+- stage: Gitleaks
+  displayName: '05 - Gitleaks Secret Scan'
+  dependsOn: TerraformValidate
+  condition: succeeded()
+
+  jobs:
+  - job: GitleaksScan
+    displayName: 'Gitleaks Scan'
+
+    steps:
+    - checkout: self
+      fetchDepth: 0
+
+    - script: |
+        curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash
+        gitleaks version
+        gitleaks detect --source "$(Build.SourcesDirectory)" --redact --exit-code 0 2>&1 | tee gitleaks_report.txt
+      displayName: 'Run Gitleaks Secret Scan'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Gitleaks Report'
+      condition: always()
+      inputs:
+        targetPath: 'gitleaks_report.txt'
+        artifact: 'gitleaks_report'
+
+
+# ==========================================================
+# 06 - TERRAFORM PLAN
+# ==========================================================
+- stage: TerraformPlan
+  displayName: '06 - Terraform Plan'
+  dependsOn:
+    - TerraformValidate
+    - TFLint
+    - Checkov
+    - Tfsec
+    - Gitleaks
+  condition: succeeded()
+
+  jobs:
+  - job: Plan
+    displayName: 'Terraform Plan'
+
+    steps:
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    - task: TerraformTask@5
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        backendServiceArm: '$(azureServiceConnection)'
+        backendAzureRmResourceGroupName: '$(backendResourceGroup)'
+        backendAzureRmStorageAccountName: '$(backendStorageAccount)'
+        backendAzureRmContainerName: '$(backendContainer)'
+        backendAzureRmKey: '$(backendKey)'
+        backendAzureRmUseEntraIdForStorage: false
+
+    - task: TerraformTask@5
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        environmentServiceNameAzureRM: '$(azureServiceConnection)'
+        commandOptions: '-out=$(Build.ArtifactStagingDirectory)/tfplan'
+
+    - script: |
+        terraform show -json "$(Build.ArtifactStagingDirectory)/tfplan" > "$(Build.ArtifactStagingDirectory)/tfplan.json"
+      displayName: 'Convert Plan to JSON'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Terraform Plan'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'terraform-plan'
+
+
+# ==========================================================
+# 07 - AGENTIC AI SECURITY AUDIT & AUTO-FIX
+# ==========================================================
+- stage: AgenticAISecurityScan
+  displayName: '07 - Agentic AI Comprehensive Security Audit & Auto-Fix'
+  dependsOn: TerraformPlan
+  condition: succeeded()
+
+  jobs:
+  - job: AISecurityAudit
+    displayName: 'Azure OpenAI Security Audit Agent'
+
+    steps:
+    - checkout: self
+      persistCredentials: true
+
+    - download: current
+      artifact: tflint_report
+      continueOnError: true
+
+    - download: current
+      artifact: checkov_report
+      continueOnError: true
+
+    - download: current
+      artifact: tfsec_report
+      continueOnError: true
+
+    - download: current
+      artifact: gitleaks_report
+      continueOnError: true
+
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.12'
+      inputs:
+        versionSpec: '3.12'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install --upgrade openai azure-identity
+      displayName: 'Install OpenAI & Azure SDK'
+
+    - task: PythonScript@0
+      displayName: 'Trigger Agentic AI Security Review & Auto-Fix'
+      env:
+        AZURE_OPENAI_ENDPOINT: $(AZURE_OPENAI_ENDPOINT)
+        AZURE_OPENAI_API_KEY: $(AZURE_OPENAI_API_KEY)
+        AZURE_OPENAI_DEPLOYMENT: $(AZURE_OPENAI_DEPLOYMENT)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        AGENTIC_MODE: 'SECURITY_SCAN'
+      inputs:
+        scriptSource: filepath
+        scriptPath: 'agentic_repair.py'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish AI Security Report'
+      condition: always()
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/ai-security-report.txt'
+        artifact: 'ai-security-report'
+
+
+# ==========================================================
+# 08 - AGENTIC AI SELF-HEALING (RUNS ON FAILURE)
+# ==========================================================
+- stage: AgenticAISelfHealing
+  displayName: '08 - Agentic AI Self-Healing Auto-Repair'
+  dependsOn:
+    - TerraformValidate
+    - TFLint
+    - Checkov
+    - Tfsec
+    - Gitleaks
+    - TerraformPlan
+  condition: failed()
+
+  jobs:
+  - job: SelfHealingAgent
+    displayName: 'Autonomous Code Repair Agent'
+
+    steps:
+    - checkout: self
+      persistCredentials: true
+
+    - download: current
+      artifact: tf_error_log
+      continueOnError: true
+
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.12'
+      inputs:
+        versionSpec: '3.12'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install --upgrade openai
+      displayName: 'Install OpenAI SDK'
+
+    - task: PythonScript@0
+      displayName: 'Trigger Self-Healing AI Agent'
+      env:
+        AZURE_OPENAI_ENDPOINT: $(AZURE_OPENAI_ENDPOINT)
+        AZURE_OPENAI_API_KEY: $(AZURE_OPENAI_API_KEY)
+        AZURE_OPENAI_DEPLOYMENT: $(AZURE_OPENAI_DEPLOYMENT)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        AGENTIC_MODE: 'AUTO_REPAIR'
+      inputs:
+        scriptSource: filepath
+        scriptPath: 'agentic_repair.py'
+
+
+# ==========================================================
+# 09 - TERRAFORM APPLY
+# ==========================================================
+- stage: TerraformApply
+  displayName: '09 - Terraform Apply'
+  dependsOn: AgenticAISecurityScan
+  condition: succeeded()
+
+  jobs:
+  - job: Apply
+    displayName: 'Terraform Apply'
+
+    steps:
+    - checkout: self
+
+    - download: current
+      artifact: terraform-plan
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    - task: TerraformTask@5
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        backendServiceArm: '$(azureServiceConnection)'
+        backendAzureRmResourceGroupName: '$(backendResourceGroup)'
+        backendAzureRmStorageAccountName: '$(backendStorageAccount)'
+        backendAzureRmContainerName: '$(backendContainer)'
+        backendAzureRmKey: '$(backendKey)'
+        backendAzureRmUseEntraIdForStorage: false
+
+    - task: TerraformTask@5
+      displayName: 'Terraform Apply'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        environmentServiceNameAzureRM: '$(azureServiceConnection)'
+        commandOptions: '$(Pipeline.Workspace)/terraform-plan/tfplan'
