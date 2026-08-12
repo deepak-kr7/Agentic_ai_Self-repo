@@ -410,11 +410,32 @@ stages:
 
 
 # ==========================================================
+# 08.5 - MANUAL APPROVAL GATE FOR TERRAFORM APPLY
+# ==========================================================
+- stage: ManualApproval
+  displayName: '08.5 - Manual Approval for Infrastructure Deployment'
+  dependsOn: AgenticAISecurityScan
+  condition: succeeded()
+
+  jobs:
+  - job: WaitForApproval
+    displayName: 'Manual Validation Gate'
+    pool: server
+    steps:
+    - task: ManualValidation@0
+      displayName: 'Approve Infrastructure Deployment to Azure'
+      inputs:
+        notifyUsers: 'deepaknsn7@gmail.com'
+        instructions: 'Please review the Terraform Plan & Agentic AI Security Audit report before approving deployment to Azure.'
+        onTimeout: 'reject'
+
+
+# ==========================================================
 # 09 - TERRAFORM APPLY
 # ==========================================================
 - stage: TerraformApply
   displayName: '09 - Terraform Apply'
-  dependsOn: AgenticAISecurityScan
+  dependsOn: ManualApproval
   condition: succeeded()
 
   jobs:

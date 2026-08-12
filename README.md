@@ -21,7 +21,8 @@ graph TD
     C1 & C2 & C3 & C4 --> D[Stage 6: Terraform Plan]
     D --> E[Stage 7: Agentic AI Security Audit & Auto-Fix]
     B & C1 & C2 & C3 & C4 & D -->|On Pipeline/Code Failure| F[Stage 8: Agentic AI Self-Healing Auto-Repair]
-    E -->|Approved| G[Stage 9: Terraform Apply]
+    E --> M[Stage 8.5: Manual Approval Gate]
+    M -->|User Approved| G[Stage 9: Terraform Apply]
     F -->|Fix Security/Syntax Vulnerability| H[Auto-Commit Patch to Git]
 ```
 
@@ -35,7 +36,8 @@ graph TD
 6. **Stage 6: `TerraformPlan`**: Generates Terraform execution plan and outputs `tfplan.json`.
 7. **Stage 7: `AgenticAISecurityScan`**: Agentic AI Agent reads all 4 scan reports + `tfplan.json`, calls Azure OpenAI (`deepaknsn7-3356-resource`), produces a Security Assessment Report, and **auto-fixes security flaws in Git**.
 8. **Stage 8: `AgenticAISelfHealing`**: **Autonomous Self-Healing Stage** (runs on failure: `condition: failed()`). Captures error logs, queries Azure OpenAI, auto-patches `.tf` code, and pushes fixes back to Git.
-9. **Stage 9: `TerraformApply`**: Applies infrastructure resources cleanly to Azure.
+9. **Stage 8.5: `ManualApproval`**: **Manual Approval Gate** (pauses pipeline for manual review & explicit user click on "Resume" before deployment).
+10. **Stage 9: `TerraformApply`**: Applies infrastructure resources cleanly to Azure after approval.
 
 ---
 
