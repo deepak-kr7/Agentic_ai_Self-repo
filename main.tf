@@ -1,9 +1,9 @@
 # 1. Resource Group
 resource "azurerm_resource_group" "rg" {
-  for_each = var.resource_map
+  for_each = var.brocked_resource_map
 
   name     = each.value.rg_name
-  location = each.value.location
+  location = each.value.locations
 }
 
 # 2. Storage Account
@@ -15,7 +15,7 @@ resource "azurerm_storage_account" "st" {
   location                 = azurerm_resource_group.rg[each.key].location
   account_tier             = each.value.storage.account_tier
   account_replication_type = each.value.storage.account_replication_type
-}
+
 
 # 3. Virtual Network (VNet)
 resource "azurerm_virtual_network" "vnet" {

@@ -4,7 +4,7 @@ resource_map = {
     location = "East US"
 
     storage = {
-      name                     = "mystorageacct12345"
+      name                     = "mysgropstg1344"
       account_tier             = "Standard"
       account_replication_type = "LRS"
     }
