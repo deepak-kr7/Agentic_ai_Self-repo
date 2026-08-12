@@ -168,22 +168,34 @@ Return ONLY valid JSON matching this schema:
                     f.write(fixed_content)
                 print(f"Successfully patched {file_to_fix}.")
 
-                pat_token = os.getenv("SYSTEM_ACCESSTOKEN", "")
-                if pat_token:
-                    try:
-                        subprocess.run(["git", "config", "user.name", "Agentic-AI-Security-Bot"], check=False)
-                        subprocess.run(["git", "config", "user.email", "agentic-ai-sec@azuredevops.local"], check=False)
-                        subprocess.run(["git", "add", file_to_fix], check=False)
-                        subprocess.run(["git", "commit", "-m", f"security(agentic-ai): {explanation}"], check=False)
+                try:
+                    subprocess.run(["git", "config", "user.name", "Agentic-AI-Bot"], check=False)
+                    subprocess.run(["git", "config", "user.email", "agentic-ai-bot@users.noreply.github.com"], check=False)
+                    subprocess.run(["git", "add", file_to_fix], check=False)
+                    subprocess.run(["git", "commit", "-m", f"fix(agentic-ai): {explanation}"], check=False)
 
-                        repo_uri = os.getenv("BUILD_REPOSITORY_URI", "")
-                        branch = os.getenv("BUILD_SOURCEBRANCHNAME", "main")
-                        if repo_uri and "dev.azure.com" in repo_uri:
-                            authed_uri = repo_uri.replace("https://", f"https://x-access-token:{pat_token}@")
-                            subprocess.run(["git", "push", authed_uri, f"HEAD:{branch}"], check=False)
-                            print("Successfully auto-committed fix to Git repo!")
-                    except Exception as git_err:
-                        print(f"Git push notice: {git_err}")
+                    branch = os.getenv("BUILD_SOURCEBRANCHNAME", "main")
+                    repo_uri = os.getenv("BUILD_REPOSITORY_URI", "")
+                    pat_token = os.getenv("SYSTEM_ACCESSTOKEN", "")
+
+                    print(f"Pushing fix commit to Git branch '{branch}'...")
+                    push_res = subprocess.run(["git", "push", "origin", f"HEAD:{branch}"], capture_output=True, text=True)
+                    if push_res.returncode == 0:
+                        print(f"Successfully auto-committed and pushed fix to GitHub branch '{branch}'!")
+                    else:
+                        print(f"Direct git push notice: {push_res.stderr.strip()}")
+                        if pat_token and repo_uri:
+                            if "github.com" in repo_uri:
+                                authed_uri = repo_uri.replace("https://", f"https://{pat_token}@")
+                            else:
+                                authed_uri = repo_uri.replace("https://", f"https://x-access-token:{pat_token}@")
+                            res2 = subprocess.run(["git", "push", authed_uri, f"HEAD:{branch}"], capture_output=True, text=True)
+                            if res2.returncode == 0:
+                                print("Successfully pushed fix via authenticated token URL!")
+                            else:
+                                print(f"Authenticated push notice: {res2.stderr.strip()}")
+                except Exception as git_err:
+                    print(f"Git push notice: {git_err}")
 
         except Exception as err:
             print(f"Agentic AI Execution Notice: {err}")

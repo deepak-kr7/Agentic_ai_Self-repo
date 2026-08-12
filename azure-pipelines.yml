@@ -312,6 +312,7 @@ stages:
         AZURE_OPENAI_API_KEY: $(AZURE_OPENAI_API_KEY)
         AZURE_OPENAI_DEPLOYMENT: $(AZURE_OPENAI_DEPLOYMENT)
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
         AGENTIC_MODE: 'SECURITY_SCAN'
       inputs:
         scriptSource: filepath
@@ -370,6 +371,7 @@ stages:
         AZURE_OPENAI_API_KEY: $(AZURE_OPENAI_API_KEY)
         AZURE_OPENAI_DEPLOYMENT: $(AZURE_OPENAI_DEPLOYMENT)
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
         AGENTIC_MODE: 'AUTO_REPAIR'
       inputs:
         scriptSource: filepath
