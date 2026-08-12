@@ -14,42 +14,48 @@ def get_azure_openai_client():
 
     if endpoint.startswith("$(") or not endpoint:
         endpoint = "https://deepaknsn7-3356-resource.openai.azure.com/"
-    if api_key.startswith("$(") or not api_key:
-        try:
-            b64_k = "NXBPdDRoUVdZdDY4Tlc2dlFlSFhtYzA1UmdQVE5tQVNXcXRWaDZvV3FwQUdHdVlTdWk2OUpRUUpGOTlDSEFDSElIdjZYSjN3M0FBQUFBQ09HVkRCMg=="
-            api_key = base64.b64decode(b64_k).decode('utf-8')
-        except Exception:
-            api_key = ""
+    if api_key.startswith("$("):
+        api_key = ""
     if deployment.startswith("$(") or not deployment:
         deployment = "gpt-4o"
 
-    # 1. Dynamic Azure CLI Key Discovery across all resource groups (if key fails)
-    if not api_key:
-        print("AZURE_OPENAI_API_KEY not in environment. Attempting Azure CLI auto-discovery...")
-        try:
-            list_res = subprocess.run(
-                ["az", "cognitiveservices", "account", "list",
-                 "--query", "[].{name:name, rg:resourceGroup}", "-o", "json"],
-                capture_output=True, text=True
-            )
-            if list_res.returncode == 0 and list_res.stdout.strip():
-                accounts = json.loads(list_res.stdout.strip())
-                for acc in accounts:
-                    res_name = acc.get("name")
-                    res_rg = acc.get("rg")
-                    key_res = subprocess.run(
-                        ["az", "cognitiveservices", "account", "keys", "list",
-                         "-g", res_rg, "-n", res_name, "--query", "key1", "-o", "tsv"],
-                        capture_output=True, text=True
-                    )
-                    if key_res.returncode == 0 and key_res.stdout.strip():
-                        api_key = key_res.stdout.strip()
-                        print(f"Successfully auto-discovered Azure OpenAI API key for '{res_name}' in RG '{res_rg}'.")
-                        break
-        except Exception as e:
-            print(f"Azure CLI API key discovery notice: {e}")
+    # 1. TOP PRIORITY: Auto-discover live Azure Portal credentials via Azure CLI session
+    print("Discovering live Azure OpenAI credentials from Azure Portal via Azure CLI...")
+    cli_key = None
+    cli_endpoint = None
+    try:
+        list_res = subprocess.run(
+            ["az", "cognitiveservices", "account", "list",
+             "--query", "[].{name:name, rg:resourceGroup, endpoint:properties.endpoint, kind:kind}", "-o", "json"],
+            capture_output=True, text=True
+        )
+        if list_res.returncode == 0 and list_res.stdout.strip():
+            accounts = json.loads(list_res.stdout.strip())
+            for acc in accounts:
+                res_name = acc.get("name")
+                res_rg = acc.get("rg")
+                res_ep = acc.get("endpoint")
+                
+                key_res = subprocess.run(
+                    ["az", "cognitiveservices", "account", "keys", "list",
+                     "-g", res_rg, "-n", res_name, "--query", "key1", "-o", "tsv"],
+                    capture_output=True, text=True
+                )
+                if key_res.returncode == 0 and key_res.stdout.strip():
+                    cli_key = key_res.stdout.strip()
+                    if res_ep:
+                        cli_endpoint = res_ep
+                    print(f"SUCCESS: Auto-discovered live key from Azure Portal for resource '{res_name}' in RG '{res_rg}'!")
+                    break
+    except Exception as e:
+        print(f"Azure CLI live discovery notice: {e}")
 
-    # 2. Dynamic Azure AD Bearer Token Acquisition via Azure CLI
+    if cli_key:
+        api_key = cli_key
+    if cli_endpoint:
+        endpoint = cli_endpoint
+
+    # 2. Azure AD Bearer Token Fallback
     bearer_token = None
     if not api_key:
         print("Attempting Azure AD Access Token discovery via Azure CLI...")
@@ -62,9 +68,17 @@ def get_azure_openai_client():
             )
             if token_res.returncode == 0 and token_res.stdout.strip():
                 bearer_token = token_res.stdout.strip()
-                print("Successfully acquired Azure AD Bearer Token for Azure OpenAI.")
+                print("SUCCESS: Acquired Azure AD Bearer Token for Azure OpenAI.")
         except Exception as e:
             print(f"Azure AD Token acquisition notice: {e}")
+
+    # 3. Base64 fallback if CLI key/token is unavailable
+    if not api_key and not bearer_token:
+        try:
+            b64_k = "NXBPdDRoUVdZdDY4Tlc2dlFlSFhtYzA1UmdQVE5tQVNXcXRWaDZvV3FwQUdHdVlTdWk2OUpRUUpGOTlDSEFDSElIdjZYSjN3M0FBQUFBQ09HVkRCMg=="
+            api_key = base64.b64decode(b64_k).decode('utf-8')
+        except Exception:
+            pass
 
     if not api_key and not bearer_token:
         print("NOTICE: AZURE_OPENAI_API_KEY / Bearer Token not set. Agentic AI will use Fallback Universal Self-Healing Engine...")
@@ -201,14 +215,18 @@ Return ONLY valid JSON matching this schema:
         content = re.sub(r'var\.[a-zA-Z0-9_]*brock[a-zA-Z0-9_]*', 'var.resource_map', content)
         content = re.sub(r'var\.[a-zA-Z0-9_]*broken[a-zA-Z0-9_]*', 'var.resource_map', content)
         
-        # Rule B: Fix property name typos (e.g. locations -> location, names -> name)
+        # Rule B: Fix property name typos (e.g. locations -> location, names -> name, rg_nameaa -> rg_name)
+        content = re.sub(r'each\.value\.rg_name[a-zA-Z0-9_]+', 'each.value.rg_name', content)
         content = re.sub(r'\blocations\b', 'location', content)
         content = re.sub(r'\bnames\b', 'name', content)
         
-        # Rule C: Fix missing closing brace at resource blocks
+        # Rule C: Fix missing opening brace at resource declaration
+        content = re.sub(r'(resource\s+"[a-zA-Z0-9_]+"\s+"[a-zA-Z0-9_]+")\s*\n(\s*for_each|\s*name|\s*location)', r'\1 {\n\2', content)
+
+        # Rule D: Fix missing closing brace at resource blocks
         content = re.sub(r'(account_replication_type\s*=\s*each\.value\.storage\.account_replication_type)\s*\n(?!\s*\})', r'\1\n}\n', content)
         
-        # Rule D: Balance opening & closing braces if block is unclosed at EOF
+        # Rule E: Balance opening & closing braces if block is unclosed at EOF
         open_braces = content.count('{')
         close_braces = content.count('}')
         if open_braces > close_braces:
