@@ -1,16 +1,16 @@
 resource_map = {
   "config1" = {
     rg_name  = "my-resource-group-1"
-    location = "East US"
+    locationssa = "East US"
 
     storage = {
-      name = "mysgropstg13424"
+      name                     = "mysgropstg13424"
       account_tier             = "Standard"
       account_replication_type = "LRS"
     }
 
     vnet = {
-      name = "my-vnet-1"
+      name          = "my-vnet-1"
       address_space = ["10.0.0.0/16"]
     }
 
@@ -22,10 +22,10 @@ resource_map = {
     nic = {
       name = "my-nic-1"
     }
-  }
+  
 
   "config2" = {
-    rg_name  = "my-resource-group-2"
+    rg_nameaa = "my-resource-group-2"
     location = "West US"
 
     storage = {
